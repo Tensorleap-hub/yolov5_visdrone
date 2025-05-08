@@ -1,0 +1,16 @@
+codeIntegrationId: ""
+projectId: ""
+secretId: ""
+entryFile: leap_binder.py
+include:
+    - leap_binder.py
+    - leap_utils.py
+    - config.py
+    - requirements.txt
+    - data/VisDrone.yaml
+    - weights/yolov5s-visdrone.pt
+    - models/*.py
+    - utils/*.py
+    - utils/**/*.py
+    - utils/***/**/*.py
+pythonVersion: py39
