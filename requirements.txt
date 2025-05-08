@@ -13,5 +13,5 @@ thop
 pandas
 seaborn
 ultralytics==8.1.47
-tensorflow==2.13.0
+tensorflow==2.18.1
 opencv-python==4.11.0.86
