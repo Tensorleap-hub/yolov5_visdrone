@@ -4,7 +4,7 @@ pillow
 pyyaml
 requests
 scipy
-torch==2.1.2
+torch==2.7.0
 torchvision
 tqdm
 psutil
