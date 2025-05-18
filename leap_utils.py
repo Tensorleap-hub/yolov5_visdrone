@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from pathlib import Path
 from utils.loss import ComputeLoss
 from models.experimental import attempt_load
@@ -34,10 +35,45 @@ def create_loss():
     compute_loss = ComputeLoss(model)  # create loss calculator
     return compute_loss
 
-
-def compute_iou_matrix(gt_bbox, preds_bbox):
+def compute_iou(gt_bbox, preds_bbox):
     iou_mat = box_iou(gt_bbox, preds_bbox)
     if iou_mat.numel() == 0 or iou_mat.shape[1] == 0 or iou_mat.shape[0] == 0:
-        return torch.zeros((1,1))
+        return np.zeros((1,1))
+    max_iou = iou_mat.max(dim=0, keepdim=True).values
+    filtered_iou = iou_mat * iou_mat.eq(max_iou)
+    return filtered_iou.max(dim=1).values.numpy().mean()
 
-    return iou_mat * (iou_mat == iou_mat.max(dim=0, keepdim=True).values)
+def compute_accuracy(gt_bbox, gt_labels, preds_bbox, preds_labels):
+    iou_mat = box_iou(gt_bbox, preds_bbox)
+    if iou_mat.numel() == 0 or iou_mat.shape[1] == 0 or iou_mat.shape[0] == 0:
+        return np.zeros((1, 1))
+    max_iou = iou_mat.max(dim=0, keepdim=True).values
+    filtered_iou = iou_mat * iou_mat.eq(max_iou)
+    succ = (preds_labels[filtered_iou.max(dim=1)[1].numpy()] == gt_labels).numpy()
+    return succ.mean()
+
+def compute_precision_recall_f1(gt_boxes, pred_boxes, iou_threshold=0.5):
+    iou_mat = box_iou(gt_boxes, pred_boxes)  # Shape: (num_gt, num_pred)
+
+    matched_gt = set()
+    matched_pred = set()
+    TP = 0
+
+    # Loop through all predictions and try to match to GT
+    for pred_idx in range(iou_mat.shape[1]):
+        gt_idx = iou_mat[:, pred_idx].argmax().item()
+        max_iou = iou_mat[gt_idx, pred_idx].item()
+
+        if max_iou >= iou_threshold and gt_idx not in matched_gt and pred_idx not in matched_pred:
+            matched_gt.add(gt_idx)
+            matched_pred.add(pred_idx)
+            TP += 1
+
+    FP = pred_boxes.shape[0] - TP
+    FN = gt_boxes.shape[0] - TP
+
+    precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
+    recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+
+    return precision, recall, f1

@@ -18,7 +18,7 @@ from code_loader.inner_leap_binder.leapbinder_decorators import (
     tensorleap_preprocess, tensorleap_gt_encoder, tensorleap_input_encoder, tensorleap_custom_metric,
     tensorleap_metadata, tensorleap_custom_loss, tensorleap_custom_visualizer
 )
-from leap_utils import create_loss, compute_iou_matrix
+from leap_utils import create_loss, compute_iou, compute_accuracy
 
 compute_loss = create_loss()
 
@@ -109,36 +109,46 @@ def gt_encoder(idx: int, preprocessing: PreprocessResponse) -> np.ndarray:
 # Metadata
 # ------------------------------
 
-@tensorleap_metadata('metadata_sample_index')
-def metadata_sample_index(idx: int, preprocess: PreprocessResponse) -> int:
+@tensorleap_metadata('metadata')
+def sample_metadata(idx: int, preprocessing: PreprocessResponse) -> dict:
     """
-    Returns the sample index as metadata.
-
-    Args:
-        idx (int): Sample index.
-        preprocess (PreprocessResponse): Not used here.
-
-    Returns:
-        int: The same index.
-    """
-    return idx
-
-@tensorleap_metadata('sharpness')
-def measure_sharpness_from_image(idx: int, preprocessing: PreprocessResponse) -> dict:
-    """
-    Computes the sharpness of the image using Laplacian variance.
+    Computes the sample's metadata.
 
     Args:
         idx (int): Index of the image.
         preprocessing (PreprocessResponse): Dataset wrapper.
 
     Returns:
-        dict: Dictionary with sharpness value.
+        dict: Dictionary with metadata values.
     """
-    image = (preprocessing.data[idx][0].numpy().transpose(1,2,0)*255).astype(np.uint8)
+    sample = preprocessing.data[idx]
+    image = (sample[0].numpy().transpose(1,2,0)*255).astype(np.uint8)
+    gt = sample[1].numpy()
+
+    if gt.shape[0] != 0:
+        gt_class = gt[:, 1]
+        gt_bbox = gt[:,2:]
+        bbox_areas = gt_bbox[:,2]*gt_bbox[:,3]
+    else:
+        gt_class, bbox_areas = np.array([]), np.array([])
+
+    unique_classes, counts = np.unique(gt_class, return_counts=True)
+
+    metadata_dict = {}
+
     laplacian = cv2.Laplacian(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), cv2.CV_64F) # Compute Laplacian variance
-    variance = laplacian.var()
-    return {"value": variance}
+    sharpness = laplacian.var()
+    metadata_dict.update({
+        "image_sharpness": float(sharpness),
+        "# of objects": gt.shape[0],
+        "# of unique objects": len(unique_classes),
+        "bbox area mean": float(bbox_areas.mean()),
+        "bbox area median": float(np.median(bbox_areas)),
+        "bbox area min": float(bbox_areas.min()),
+        "bbox area max": float(bbox_areas.max()),
+        "bbox area var": float(bbox_areas.var()),
+    })
+    return metadata_dict
 
 # ------------------------------
 # Custom Loss
@@ -170,7 +180,7 @@ def yolov5_loss(pred0: np.ndarray, pred1: np.ndarray, pred2: np.ndarray, gt: np.
 @tensorleap_custom_visualizer('image_visualizer', LeapDataType.Image)
 def image_visualizer(image: np.ndarray) -> LeapImage:
     """
-    Returns a LeapImage without compression for visualization.
+    Returns a LeapImage for visualization.
 
     Args:
         image (np.ndarray): Input image array.
@@ -242,53 +252,52 @@ def bb_decoder(image: np.ndarray, predictions: np.ndarray) -> LeapImageWithBBox:
 # Custom Metrics
 # ------------------------------
 
-@tensorleap_custom_metric("ious", direction=MetricDirection.Upward)
-def get_iou(y_pred: np.ndarray, preprocess: SamplePreprocessResponse):
+from leap_utils import compute_precision_recall_f1
+@tensorleap_custom_metric(name="per_sample_metrics", direction=MetricDirection.Upward)
+def get_per_sample_metrics(y_pred: np.ndarray, preprocess: SamplePreprocessResponse):
     """
-    Computes mean Intersection over Union (IoU) between predicted and ground truth bounding boxes for a sample.
+    Calculates metrics per sample on the model's prediction
 
     Args:
-        y_pred (np.ndarray): Predicted bounding boxes in YOLO format.
-        preprocess (SamplePreprocessResponse): Contains access to original ground truth data and metadata.
+        y_pred (np.ndarray): Prediction from model.
+        preprocessing (PreprocessResponse): Dataset wrapper.
 
     Returns:
-        np.ndarray: Single-element array with mean IoU for the sample.
+        dict: Dictionary with metric values.
     """
+    def _make_metrics(precision, recall, f1, iou, accuracy):
+        return {
+            "precision": np.array([precision], dtype=np.float32),
+            "recall": np.array([recall], dtype=np.float32),
+            "f1": np.array([f1], dtype=np.float32),
+            "iou": np.array([iou], dtype=np.float32),
+            "accuracy": np.array([accuracy], dtype=np.float32),
+        }
+
     dataloader = preprocess.preprocess_response.data
-    gt_bbox = dataloader[int(preprocess.sample_ids)][1]
-    gt_bbox = xywh2xyxy(gt_bbox[:,2:])
-
+    gt = dataloader[int(preprocess.sample_ids)][1] # shape: [N, 6] (_,label,x,y,w,h)
     preds = non_max_suppression(torch.from_numpy(y_pred.transpose(0, 2, 1)))[0]
-    preds = preds[:,:4]/dataloader.img_size
 
-    iou_mat = compute_iou_matrix(gt_bbox, preds)
-    return np.expand_dims(iou_mat.max(dim=1).values.numpy().mean(),axis=0)
+    if gt.shape[0] == 0 and preds.shape[0] == 0:
+        return _make_metrics(1, 0, 0, 1, 1) # Edge case: no objects, assume perfect
 
+    if preds.shape[0] == 0:
+        return _make_metrics(0, 0, 0, 0, 0)  # No predictions at all
 
-@tensorleap_custom_metric("accuracy", direction=MetricDirection.Upward)
-def get_accuracy(y_pred: np.ndarray, preprocess: SamplePreprocessResponse):
-    """
-    Computes mean accuracy of the label classification between the most overlapping gt bbox and pred bbox of the sample.
+    if gt.shape[0] == 0:
+        return _make_metrics(0, 0, 0, 0, 0) # No GT but has predictions
 
-    Args:
-        y_pred (np.ndarray): Predicted bounding boxes in YOLO format.
-        preprocess (SamplePreprocessResponse): Contains access to original ground truth data and metadata.
-
-    Returns:
-        np.ndarray: Single-element array with mean accuracy for the sample.
-    """
-    dataloader = preprocess.preprocess_response.data
-    gt = dataloader[int(preprocess.sample_ids)][1]
-    gt_bbox = xywh2xyxy(gt[:, 2:])
-    gt_labels = gt[:, 1]
-
-    preds = non_max_suppression(torch.from_numpy(y_pred.transpose(0, 2, 1)))[0]
-    preds_bbox = preds[:, :4]/dataloader.img_size
+    preds_boxes = preds[:, :4] / dataloader.img_size # normalize to be [0,1]
     preds_labels = preds[:, 5]
 
-    iou_mat = compute_iou_matrix(gt_bbox, preds_bbox)
-    succ = (preds_labels[iou_mat.max(dim=1)[1].numpy()]==gt_labels).numpy()
-    return np.expand_dims(succ.mean(),axis=0)
+    gt_boxes = xywh2xyxy(gt[:, 2:])
+    gt_labels = gt[:, 1]
+
+    p, r, f1 = compute_precision_recall_f1(gt_boxes, preds_boxes, iou_threshold=0.5)
+    iou = compute_iou(gt_boxes, preds_boxes)
+    acc = compute_accuracy(gt_boxes, gt_labels, preds_boxes, preds_labels)
+
+    return _make_metrics(float(p), float(r), float(f1), float(iou), float(acc))
 
 # ------------------------------
 # Prediction Binding

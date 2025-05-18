@@ -1,6 +1,6 @@
 from leap_binder import (
-    input_encoder, preprocess_func_leap, gt_encoder, measure_sharpness_from_image, get_iou,
-    get_accuracy, leap_binder, yolov5_loss, metadata_sample_index, gt_bb_decoder, image_visualizer, bb_decoder
+    input_encoder, preprocess_func_leap, gt_encoder, sample_metadata, leap_binder, yolov5_loss,
+    gt_bb_decoder, image_visualizer, bb_decoder, get_per_sample_metrics
 )
 import tensorflow as tf
 import matplotlib
@@ -37,12 +37,9 @@ def check_custom_test():
             visualize(image_with_gt_bbox)
 
             d_loss=yolov5_loss(preds[1].numpy(), preds[2].numpy(), preds[3].numpy(), np.expand_dims(gt, 0), preds[0].numpy())
-            sharpness = measure_sharpness_from_image(idx, subset)
-            iou = get_iou(preds[0].numpy(), SamplePreprocessResponse(np.array(idx), subset))
-            acc = get_accuracy(preds[0].numpy(), SamplePreprocessResponse(np.array(idx), subset))
-            metadata_sample=metadata_sample_index(idx,subset)
+            metadata = sample_metadata(idx, subset)
+            metrics = get_per_sample_metrics(preds[0].numpy(), SamplePreprocessResponse(np.array(idx), subset))
     print("finish tests")
-
 
 if __name__ == '__main__':
     check_custom_test()
