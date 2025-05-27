@@ -8,6 +8,7 @@ from pathlib import Path
 from code_loader import leap_binder
 from utils.dataloaders import create_dataloader
 from utils.general import check_dataset, colorstr
+from leap_utils import compute_precision_recall_f1
 from code_loader.contract.responsedataclasses import BoundingBox
 from code_loader.visualizers.default_visualizers import LeapImage
 from utils.general import non_max_suppression, xyxy2xywh, xywh2xyxy
@@ -49,6 +50,7 @@ def preprocess_func_leap() -> List[PreprocessResponse]:
                 rect=False,
                 workers=1,
                 prefix=colorstr(f"{split}: "),
+                shuffle=False,
             )
 
         responses.append(PreprocessResponse(data=dataset, length=(len(dataset))))
@@ -67,7 +69,7 @@ def input_encoder(idx: int, preprocess: PreprocessResponse) -> np.ndarray:
         np.ndarray: Normalized image array.
     """
     image = preprocess.data[idx][0].numpy().astype(np.float32)/255
-    return image.transpose(1,2,0)
+    return image.transpose(1,2,0) # Image from dataloader is channel first (C,H,W). Tensorleap works with channel last (H,W,C)
 
 
 @tensorleap_gt_encoder('classes')
@@ -171,7 +173,9 @@ def yolov5_loss(pred0: np.ndarray, pred1: np.ndarray, pred2: np.ndarray, gt: np.
 
     gt = torch.from_numpy(gt).squeeze(0)
     gt = torch.cat([torch.zeros_like(gt[:,1]).unsqueeze(1), gt], dim=1) # Add "batch idx" column for the loss
-    return compute_loss(preds, gt)[0].numpy()
+    loss = compute_loss(preds, gt)[0] # compute_loss returns a tuple, the full loss is the first item
+    loss = loss.unsqueeze(0) # Add batch dimension
+    return loss.numpy()
 
 # ------------------------------
 # Visualizers
@@ -252,7 +256,6 @@ def bb_decoder(image: np.ndarray, predictions: np.ndarray) -> LeapImageWithBBox:
 # Custom Metrics
 # ------------------------------
 
-from leap_utils import compute_precision_recall_f1
 @tensorleap_custom_metric(name="per_sample_metrics", direction=MetricDirection.Upward)
 def get_per_sample_metrics(y_pred: np.ndarray, preprocess: SamplePreprocessResponse):
     """
@@ -302,12 +305,23 @@ def get_per_sample_metrics(y_pred: np.ndarray, preprocess: SamplePreprocessRespo
 # ------------------------------
 # Prediction Binding
 # ------------------------------
+# The model outputs a list of 4 tensors:
+# 1. Post-NMS object detection results
+# 2. 3 raw prediction outputs used for computing loss
 
+# Bind the object detection output for visualization/interpretation
+# - This tensor contains bounding box predictions after NMS
+# - Shape: (Batch, Prediction scores, Num_BBoxes)
+# - Prediction scores contain the following scores:
+#   ["x", "y", "w", "h", "obj_conf"] + class names from cfg["names"]
+# - 'channel_dim=1' indicates that the prediction scores are arranged along dimension 1
 leap_binder.add_prediction(
     name='object detection',
     labels=["x", "y", "w", "h", "obj_conf"] + cfg["names"],
     channel_dim=1
 )
+
+# Bind intermediate feature outputs for analysis or debugging.
 leap_binder.add_prediction(name='concatenate_128', labels=[str(i) for i in range(128)], channel_dim=1)
 leap_binder.add_prediction(name='concatenate_64', labels=[str(i) for i in range(64)], channel_dim=1)
 leap_binder.add_prediction(name='concatenate_32', labels=[str(i) for i in range(32)], channel_dim=1)
