@@ -10,7 +10,7 @@ def export_onnx(pytorch_weights_path=Path(__file__).resolve().parent / "weights/
     input = torch.rand(1,3,1024,1024)
     if not onnx_path:
         pytorch_weights_path = Path(pytorch_weights_path)
-        onnx_path = pytorch_weights_path.with_suffix("onnx")
+        onnx_path = pytorch_weights_path.with_suffix(".onnx")
     try:
         torch.onnx.export(model,input,onnx_path,
                     input_names=['images'],
