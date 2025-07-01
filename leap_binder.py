@@ -56,7 +56,7 @@ def preprocess_func_leap() -> List[PreprocessResponse]:
         responses.append(PreprocessResponse(data=dataset, length=(len(dataset))))
     return responses
 
-@tensorleap_input_encoder('image')
+@tensorleap_input_encoder('image', channel_dim=1)
 def input_encoder(idx: int, preprocess: PreprocessResponse) -> np.ndarray:
     """
     Retrieves and normalizes an image from the dataset.
@@ -69,7 +69,8 @@ def input_encoder(idx: int, preprocess: PreprocessResponse) -> np.ndarray:
         np.ndarray: Normalized image array.
     """
     image = preprocess.data[idx][0].numpy().astype(np.float32)/255
-    return image.transpose(1,2,0) # Image from dataloader is channel first (C,H,W). Tensorleap works with channel last (H,W,C)
+    # return image.transpose(1,2,0) # Image from dataloader is channel first (C,H,W). Tensorleap works with channel last (H,W,C)
+    return image
 
 
 @tensorleap_gt_encoder('classes')
@@ -169,7 +170,8 @@ def yolov5_loss(pred0: np.ndarray, pred1: np.ndarray, pred2: np.ndarray, gt: np.
     Returns:
         np.ndarray: Loss scalar.
     """
-    preds = [torch.from_numpy(pred.transpose(0,4,1,2,3)) for pred in (pred0, pred1, pred2)]
+    # preds = [torch.from_numpy(pred.transpose(0,4,1,2,3)) for pred in (pred0, pred1, pred2)]
+    preds = [torch.from_numpy(pred) for pred in (pred0, pred1, pred2)]
 
     gt = torch.from_numpy(gt).squeeze(0)
     gt = torch.cat([torch.zeros_like(gt[:,1]).unsqueeze(1), gt], dim=1) # Add "batch idx" column for the loss
@@ -192,7 +194,9 @@ def image_visualizer(image: np.ndarray) -> LeapImage:
     Returns:
         LeapImage: Visualizable image object.
     """
-    return LeapImage((image.squeeze(0)*255).astype(np.uint8), compress=False)
+    image = image.squeeze(0)
+    image = image.transpose(1,2,0) # LeapImage visualizer expects inputs as channel last.
+    return LeapImage((image*255).astype(np.uint8), compress=False)
 
 
 @tensorleap_custom_visualizer("bb_gt_decoder", LeapDataType.ImageWithBBox)
@@ -207,7 +211,9 @@ def gt_bb_decoder(image: np.ndarray, bb_gt: np.ndarray) -> LeapImageWithBBox:
     Returns:
         LeapImageWithBBox: Image with bounding boxes drawn.
     """
-    image = (image.squeeze(0)*255).astype(np.uint8)
+    image = image.squeeze(0)
+    image = image.transpose(1, 2, 0)  # LeapImageWithBBox visualizer expects inputs as channel last.
+    image = (image*255).astype(np.uint8)
     bboxes = [
         BoundingBox(
             x=bbx[1],
@@ -234,9 +240,12 @@ def bb_decoder(image: np.ndarray, predictions: np.ndarray) -> LeapImageWithBBox:
         LeapImageWithBBox: Image with predicted bounding boxes.
     """
     # Convert raw predictions into xyxy bboxes
-    preds = non_max_suppression(torch.from_numpy(predictions.transpose(0,2,1)))[0].numpy()
+    preds = non_max_suppression(torch.from_numpy(predictions))[0].numpy()
     preds = xyxy2xywh(preds)
-    image = (image.squeeze(0) * 255).astype(np.uint8)
+
+    image = image.squeeze(0)
+    image = image.transpose(1, 2, 0)  # LeapImageWithBBox visualizer expects inputs as channel last.
+    image = (image * 255).astype(np.uint8)
     h, w, _ = image.shape
 
     bboxes = [
@@ -279,7 +288,7 @@ def get_per_sample_metrics(y_pred: np.ndarray, preprocess: SamplePreprocessRespo
 
     dataloader = preprocess.preprocess_response.data
     gt = dataloader[int(preprocess.sample_ids)][1] # shape: [N, 6] (_,label,x,y,w,h)
-    preds = non_max_suppression(torch.from_numpy(y_pred.transpose(0, 2, 1)))[0]
+    preds = non_max_suppression(torch.from_numpy(y_pred))[0]
 
     if gt.shape[0] == 0 and preds.shape[0] == 0:
         return _make_metrics(1, 0, 0, 1, 1) # Edge case: no objects, assume perfect
@@ -306,7 +315,7 @@ def get_per_sample_metrics(y_pred: np.ndarray, preprocess: SamplePreprocessRespo
 # Prediction Binding
 # ------------------------------
 # The model outputs a list of 4 tensors:
-# 1. Post-NMS object detection results
+# 1. Processed object detection results for visualization
 # 2. 3 raw prediction outputs used for computing loss
 
 # Bind the object detection output for visualization/interpretation
@@ -322,9 +331,9 @@ leap_binder.add_prediction(
 )
 
 # Bind intermediate feature outputs for analysis or debugging.
-leap_binder.add_prediction(name='concatenate_128', labels=[str(i) for i in range(128)], channel_dim=1)
-leap_binder.add_prediction(name='concatenate_64', labels=[str(i) for i in range(64)], channel_dim=1)
-leap_binder.add_prediction(name='concatenate_32', labels=[str(i) for i in range(32)], channel_dim=1)
+leap_binder.add_prediction(name='concatenate_128', labels=[str(i) for i in range(128)], channel_dim=2)
+leap_binder.add_prediction(name='concatenate_64', labels=[str(i) for i in range(64)], channel_dim=2)
+leap_binder.add_prediction(name='concatenate_32', labels=[str(i) for i in range(32)], channel_dim=2)
 
 if __name__ == '__main__':
     leap_binder.check()

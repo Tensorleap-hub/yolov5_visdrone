@@ -1,0 +1,152 @@
+decorators:
+  - operation: Input
+    data:
+      type: Input
+      output_name: image
+    id: '141'
+    inputs: {}
+    outputs:
+      image:
+        - inputKey: input
+          operation: ZeroPadding2D
+          name: model.0/conv/Conv_tl_conv_pad_1
+          id: '140'
+        - inputKey: image
+          operation: Visualizer
+          id: '1110'
+        - inputKey: image
+          operation: Visualizer
+          id: '1111'
+        - inputKey: image
+          operation: Visualizer
+          id: '1112'
+  - operation: CustomLoss
+    data:
+      type: CustomLoss
+      name: yolov5_loss
+      selected: yolov5_loss
+      user_unique_name: yolov5_loss
+      arg_names:
+        - pred0
+        - pred1
+        - pred2
+        - gt
+        - demo_pred
+    id: '1107'
+    inputs:
+      demo_pred:
+        - outputKey: feature_map
+          operation: Permute
+          name: output1_permuted_node_tl_transpose
+          id: '1'
+      pred0:
+        - outputKey: feature_map
+          operation: Permute
+          name: output2_permuted_node_tl_transpose
+          id: '1104'
+      pred1:
+        - outputKey: feature_map
+          operation: Permute
+          name: output3_permuted_node_tl_transpose
+          id: '1105'
+      pred2:
+        - outputKey: feature_map
+          operation: Permute
+          name: output4_permuted_node_tl_transpose
+          id: '1106'
+      gt:
+        - outputKey: classes
+          operation: GroundTruth
+          id: '1108'
+    outputs: {}
+  - operation: GroundTruth
+    data:
+      type: GroundTruth
+      output_name: classes
+      selected: classes
+    id: '1108'
+    inputs: {}
+    outputs:
+      classes:
+        - inputKey: gt
+          operation: CustomLoss
+          id: '1107'
+        - inputKey: bb_gt
+          operation: Visualizer
+          id: '1111'
+  - operation: Metric
+    data:
+      type: Metric
+      name: per_sample_metrics
+      metric_name: per_sample_metrics
+      arg_names:
+        - y_pred
+      user_unique_name: per_sample_metrics
+    id: '1109'
+    inputs:
+      y_pred:
+        - outputKey: feature_map
+          operation: Permute
+          name: output1_permuted_node_tl_transpose
+          id: '1'
+    outputs: {}
+  - operation: Visualizer
+    data:
+      type: Visualizer
+      name: bb_decoder
+      visualizer_name: bb_decoder
+      visualizer_type: ImageWithBBox
+      arg_names:
+        - image
+        - predictions
+      user_unique_name: bb_decoder
+    id: '1110'
+    inputs:
+      predictions:
+        - outputKey: feature_map
+          operation: Permute
+          name: output1_permuted_node_tl_transpose
+          id: '1'
+      image:
+        - outputKey: image
+          operation: Input
+          id: '141'
+    outputs: {}
+  - operation: Visualizer
+    data:
+      type: Visualizer
+      name: bb_gt_decoder
+      visualizer_name: bb_gt_decoder
+      visualizer_type: ImageWithBBox
+      arg_names:
+        - image
+        - bb_gt
+      user_unique_name: bb_gt_decoder
+    id: '1111'
+    inputs:
+      image:
+        - outputKey: image
+          operation: Input
+          id: '141'
+      bb_gt:
+        - outputKey: classes
+          operation: GroundTruth
+          id: '1108'
+    outputs: {}
+  - operation: Visualizer
+    data:
+      type: Visualizer
+      name: image_visualizer
+      visualizer_name: image_visualizer
+      visualizer_type: Image
+      arg_names:
+        - image
+      user_unique_name: image_visualizer
+    id: '1112'
+    inputs:
+      image:
+        - outputKey: image
+          operation: Input
+          id: '141'
+    outputs: {}
+layers: []
