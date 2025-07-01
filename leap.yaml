@@ -1,5 +1,5 @@
-codeIntegrationId: ""
-projectId: ""
+codeIntegrationId: 6810c8b8f2e0b6768df86b08
+projectId: 681c4f17dca46623a33d7cde
 secretId: ""
 entryFile: leap_binder.py
 include:
@@ -7,6 +7,7 @@ include:
     - leap_utils.py
     - config.py
     - requirements.txt
+    - leap_mapping.yaml
     - data/VisDrone.yaml
     - weights/yolov5s-visdrone.pt
     - models/*.py
