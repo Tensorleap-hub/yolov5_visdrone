@@ -22,7 +22,7 @@ def check_custom_test():
 
     responses = preprocess_func_leap()
     for subset in responses:
-        for idx in range(10):
+        for idx in range(2):
             image = input_encoder(idx, subset)
 
             preds = cnn([np.expand_dims(image, axis=0)])

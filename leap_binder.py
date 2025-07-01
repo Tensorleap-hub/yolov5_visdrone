@@ -36,7 +36,7 @@ def preprocess_func_leap() -> List[PreprocessResponse]:
         List[PreprocessResponse]: List of datasets prepared for further processing.
     """
     data_path = Path(__file__).resolve().parent / 'data/VisDrone.yaml'
-    data = check_dataset(data_path)
+    data = check_dataset(data_path, autodownload=False)
 
     imgsz = 1024 # Follow the train protocol
     responses = []
