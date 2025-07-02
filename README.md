@@ -1,4 +1,4 @@
-# General
+# 📄 General
 This project demonstrates the integration of a YOLOv5 model with the VisDrone dataset on the Tensorleap platform. The integration logic is implemented in leap_binder.py, which handles data loading, metadata computation, loss definition, image and bounding box visualization, metrics, and more.
 
 Before pushing the project to Tensorleap, it’s recommended to run the leap_custom_test.py script after setting up the data (as explained below). This allows you to verify that data loading and visualizations function as expected. Once the test passes, proceed to the deployment step.
@@ -6,7 +6,7 @@ Before pushing the project to Tensorleap, it’s recommended to run the leap_cus
 ### Installing Dependencies
 This project uses Poetry for dependency and environment management. To install the required packages run ```poetry install``` withing the root project directory. Then use the Poetry-managed Python interpreter (by pointing to it in the IDE or by running ```poetry run python leap_custom_test.py```)  
 
-# Data Handling
+# 📊 Data Handling
 To replicate the data handling used in this project, refer to the VisDrone.yaml configuration file. The path field should point to the root directory of your dataset, which must be located within the Tensorleap-mounted folder (~/tensorleap). If you are creating your own yaml, you do not have to implement the download part as it is optional.  
 
 In order to use your own yaml file, refer to "preprocess_func_leap" function within the leap_binder.py and change the data_path to point to the new yaml.
@@ -20,14 +20,16 @@ Each line in the label file should represent a bounding box in the following for
 where x, y, w, and h are normalized values in the range [0, 1].
 
 
-# Pushing Project to Tensorleap
+# 📤 Pushing Project to Tensorleap
 To upload the code and model to the Tensorleap platform, navigate to the project directory and run the following command, specifying the path to the model weights file:  
 ```
 leap project push weights/yolov5s-visdrone.onnx
 ```
-Replace the path with your specific model weights file if different. When you have a new model and want to export it to onnx, you should use the ```export_onnx``` function in ```leap_utils.py```.
+Replace the path with your specific model weights file if different. 
 
-# Leap Binder Overview 
+⚠️ **Note:** If you want to export your own model to onnx, you should use the ```export_onnx``` function in ```leap_utils.py```. It converts the model in a way that integrates best with Tensorleap.
+
+# 🖇️ Leap Binder Overview 
 The leap_binder.py file contains all the necessary functions to integrate the YOLOv5 model and VisDrone dataset with the Tensorleap platform. It defines how data is preprocessed, encoded, visualized, and evaluated within Tensorleap. Below is a breakdown of its key components:
 
 ### Preprocessing
