@@ -1,76 +1,146 @@
-# 📄 General
-This project demonstrates the integration of a YOLOv5 model with the VisDrone dataset on the Tensorleap platform. The integration logic is implemented in leap_binder.py, which handles data loading, metadata computation, loss definition, image and bounding box visualization, metrics, and more.
+# 📦 YOLOv5 + VisDrone Integration on Tensorleap
+This project demonstrates how to integrate a YOLOv5 model with the VisDrone dataset using the Tensorleap platform. The integration is handled via the leap_binder.py script, which defines how data is loaded, visualized, and evaluated.
 
-Before pushing the project to Tensorleap, it’s recommended to run the leap_custom_test.py script after setting up the data (as explained below). This allows you to verify that data loading and visualizations function as expected. Once the test passes, proceed to the deployment step.
+This guide walks you through setup, local testing, model export, and pushing your project to Tensorleap.
 
-### Installing Dependencies
-This project uses Poetry for dependency and environment management. To install the required packages run ```poetry install``` withing the root project directory. Then use the Poetry-managed Python interpreter (by pointing to it in the IDE or by running ```poetry run python leap_custom_test.py```)  
+## ✅ Prerequisites
+Before you begin, ensure you have:
+* 	Python >=3.8, <3.12 
+* 	[Poetry](https://python-poetry.org/docs/#installation) installed 
+*	The [Tensorleap CLI](https://docs.tensorleap.ai/tensorleap-integration/cli-assets-upload) installed and authenticated
 
-# 📊 Data Handling
-To replicate the data handling used in this project, refer to the VisDrone.yaml configuration file. The path field should point to the root directory of your dataset, which must be located within the Tensorleap-mounted folder (~/tensorleap). If you are creating your own yaml, you do not have to implement the download part as it is optional.  
+## 📥 Setup Instructions  
+### Clone the Repository
+```
+git clone https://github.com/Tensorleap-hub/yolov5_visdrone.git
+cd yolov5_visdrone
+```
+### Install Dependencies
+This project uses Poetry for environment management.
+```
+poetry install
+```
+To run Python scripts using the virtual environment:
+```
+poetry run python leap_custom_test.py
+```
+### 📂 Dataset Configuration
+This integration uses the [VisDrone dataset](https://github.com/VisDrone/VisDrone-Dataset). Dataset structure should follow this pattern:
+```
+VisDrone/
+├── train/
+│   ├── images/
+│   └── labels/
+├── val/
+│   ├── images/
+│   └── labels/
+├── test/
+│   ├── images/
+│   └── labels/
+```
 
-In order to use your own yaml file, refer to "preprocess_func_leap" function within the leap_binder.py and change the data_path to point to the new yaml.
+Each label file must match the corresponding image name and contain YOLO-style bounding box annotations:
+```
+<class_id> <x_center> <y_center> <width> <height>  # All normalized [0, 1]
+```
 
-The train, val, and test fields should each reference the corresponding images subfolder within the dataset. Each of these directories (train, val, and test) must contain two subfolders:
-* **images**: containing the image files
-* **labels**: containing a .txt file for each image (e.g., 0000002_00005_d_0000014.jpg should have a corresponding 0000002_00005_d_0000014.txt)
+#### Dataset Path
+Point the path field in VisDrone.yaml to your dataset root (must be inside the tensorleap mounted folder - usually ~/tensorleap).
 
-Each line in the label file should represent a bounding box in the following format: \
-```<label> <x> <y> <w> <h>``` \
-where x, y, w, and h are normalized values in the range [0, 1].
+To use a custom .yaml file, update the data_path inside the preprocess_func_leap() function in leap_binder.py.
 
 
-# 📤 Pushing Project to Tensorleap
-To upload the code and model to the Tensorleap platform, navigate to the project directory and run the following command, specifying the path to the model weights file:  
+
+## ✅ Local Validation (Highly Recommended)
+Before pushing to Tensorleap, run a local test to verify that data loading and visualization work correctly:
+```
+poetry run python leap_custom_test.py
+```
+This checks:
+* 	Data integration logic
+*	Bounding box visualization
+*	Metric and metadata computation
+
+---
+## 🧠 Exporting Your Own Model
+If you wish to evaluate a custom PyTorch model, use the provided export function:
+```
+from leap_utils import export_onnx
+export_onnx(model, "your_model.onnx")
+```
+This ensures compatibility with Tensorleap’s ONNX pipeline.
+
+---
+
+## 🚀 Pushing to Tensorleap
+Once local validation passes:
 ```
 leap project push weights/yolov5s-visdrone.onnx
 ```
-Replace the path with your specific model weights file if different. 
+Follow CLI prompts to select (or create) the:
+* Model
+* Project
+* Code Integration
 
-⚠️ **Note:** If you want to export your own model to onnx, you should use the ```export_onnx``` function in ```leap_utils.py```. It converts the model in a way that integrates best with Tensorleap.
+**Note**: If the model mapping (shown under the “Network” tab) has changed compared to Visdrone, reach out or adjust accordingly. This only needs to be done once.
 
-# 🖇️ Leap Binder Overview 
-The leap_binder.py file contains all the necessary functions to integrate the YOLOv5 model and VisDrone dataset with the Tensorleap platform. It defines how data is preprocessed, encoded, visualized, and evaluated within Tensorleap. Below is a breakdown of its key components:
+After confirming the mapping, click “Validate Assets” on the platform to verify shapes and consistency.
 
-### Preprocessing
-```preprocess_func_leap()``` -
-Loads and wraps the train, val, and test splits using the VisDrone.yaml file. It prepares the dataset into a format suitable for Tensorleap, returning a list of PreprocessResponse objects.
+---
 
-### Input and Ground Truth Encoding
-* ```input_encoder()``` -
-Converts the dataset image to a normalized NumPy array in channel-last (H, W, C) format, which Tensorleap requires.
-* ```gt_encoder()``` -
-Retrieves and adjusts bounding boxes for each image sample, performing image-size normalization to ensure accurate alignment.
+## 📌 Code Integration Overview (leap_binder.py) 
+This script defines how your model and dataset interact with the Tensorleap platform.
 
-### Metadata Computation
-```sample_metadata()``` -
-Extracts per-sample statistics like image sharpness (via Laplacian variance), number of objects, and bounding box area metrics (mean, median, min, max, variance). These metadata fields can be used for filtering, analysis, or grouping samples on the platform.
+#### Preprocessing
+* 	```preprocess_func_leap()``` - 
+Loads and structures train, val, and test datasets using your YAML config.
 
-### Custom Loss
-```yolov5_loss()``` -
-Implements a YOLOv5-style loss function using the model’s raw prediction outputs across multiple scales. The loss is computed using Tensor-based operations and supports end-to-end training on Tensorleap.
+#### Encoding
+* 	```input_encoder()``` - 
+Converts images to normalized NumPy arrays in channel-last format (HWC).
+* 	```gt_encoder()``` -
+Processes ground truth bounding boxes.
 
-### Visualizers
-* ```image_visualizer()``` -
-Displays the raw input image in the Tensorleap UI.
-* ```bb_decoder()``` -
-Overlays ground truth bounding boxes on the image for visual comparison and inspection.
-* ```bb_decoder()``` -
-Applies non-max suppression (NMS) and overlays the model’s predicted bounding boxes onto the image.
+#### Metadata
+* 	```sample_metadata()``` -
+Computes per-sample stats like sharpness, object count, and bounding box sizes.
 
-### Custom Metrics
-```get_per_sample_metrics()``` - 
-Computes standard object detection metrics per sample:
-* 	Precision
-* 	Recall
-* 	F1 Score
-*	IoU
-*	Accuracy
+#### Custom Loss
+* 	```yolov5_loss()``` -
+YOLOv5-style multi-scale loss function using raw model outputs.
 
-These metrics are used to evaluate how well each individual sample is handled by the model.
+#### Visualizers
+* 	```image_visualizer()``` -
+Shows raw input image.
+* 	```bb_decoder()``` -
+Displays ground truth bounding boxes.
+* 	```bb_predictor()``` -
+Applies NMS and shows predicted boxes.
 
-### Prediction Binding
+#### Metrics
+* 	```get_per_sample_metrics()``` -
+Computes precision, recall, F1, IoU, and accuracy per sample.
 
-Three types of predictions are registered via ```leap_binder.add_prediction()```:
-*	object detection: Final post-NMS predictions used for visualization and metrics.
-*	concatenate_128, concatenate_64, concatenate_32: Intermediate feature maps from the model, useful for internal analysis and debugging.
+#### Predictions
+
+Registered via ```leap_binder.add_prediction()```:
+*  Final detection outputs (processed and ready for NMS, used in eval mode) 
+* Intermediate feature maps (e.g., concatenate_128, 64, 32, used for loss computation)
+
+---
+## 🛠 Tips & Troubleshooting
+#### Common errors:
+##### ```leap_custom_test.py``` failures:
+* Shape mismatch - debug and verify tensors shapes
+* Bounding boxes are misaligned in visualizations - make sure you follow the correct bbox convention.
+#### Validate Assets failures:
+* ```leap_custom_test.py``` passes and Validate Assets fails - check the mapping in the Network tab. 
+#### Usage tips:
+* If your code integration is working and you only need to update the code (without changing the model), use ```leap code push``` instead of ```leap project push``` to avoid re-uploading an already functioning model.
+* If not sure what code integration is currently in Tensorleap's platform - go to code integration tab in the network tab and see the last update time (and the code itself) 
+
+---
+
+## 📚 References
+* [Tensorleap Docs](https://docs.tensorleap.ai/)
+* [VisDrone Dataset](https://github.com/VisDrone/VisDrone-Dataset)
