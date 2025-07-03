@@ -1,13 +1,13 @@
-import onnx
 import torch
 import numpy as np
-from onnx import helper
 from pathlib import Path
 from utils.loss import ComputeLoss
 from models.experimental import attempt_load
 from ultralytics.utils.metrics import box_iou
 
 def add_noop_permute_to_outputs(onnx_path_in, onnx_path_out=None):
+    import onnx
+    from onnx import helper
     if onnx_path_out is None:
         onnx_path_out = onnx_path_in
 
