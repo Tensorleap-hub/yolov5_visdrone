@@ -2,7 +2,6 @@ from leap_binder import (
     input_encoder, preprocess_func_leap, gt_encoder, sample_metadata, leap_binder, yolov5_loss,
     gt_bb_decoder, image_visualizer, bb_decoder, get_per_sample_metrics
 )
-import matplotlib
 import numpy as np
 from code_loader.helpers.visualizer.visualize import visualize
 from code_loader.contract.datasetclasses import SamplePreprocessResponse
