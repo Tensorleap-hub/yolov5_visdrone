@@ -169,7 +169,6 @@ def yolov5_loss(pred0: np.ndarray, pred1: np.ndarray, pred2: np.ndarray, gt: np.
     Returns:
         np.ndarray: Loss scalar.
     """
-    # preds = [torch.from_numpy(pred.transpose(0,4,1,2,3)) for pred in (pred0, pred1, pred2)]
     preds = [torch.from_numpy(pred) for pred in (pred0, pred1, pred2)]
 
     gt = torch.from_numpy(gt).squeeze(0)
