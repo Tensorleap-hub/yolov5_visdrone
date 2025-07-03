@@ -69,7 +69,6 @@ def input_encoder(idx: int, preprocess: PreprocessResponse) -> np.ndarray:
         np.ndarray: Normalized image array.
     """
     image = preprocess.data[idx][0].numpy().astype(np.float32)/255
-    # return image.transpose(1,2,0) # Image from dataloader is channel first (C,H,W). Tensorleap works with channel last (H,W,C)
     return image
 
 
