@@ -1,11 +1,11 @@
-import os.path
 import cv2
 import torch
+import textwrap
 import numpy as np
 from config import cfg
 from typing import List
-from pathlib import Path
 
+from utils.loss import ComputeLoss
 from code_loader import leap_binder
 from utils.dataloaders import create_dataloader
 from utils.general import check_dataset, colorstr
@@ -20,9 +20,9 @@ from code_loader.inner_leap_binder.leapbinder_decorators import (
     tensorleap_preprocess, tensorleap_gt_encoder, tensorleap_input_encoder, tensorleap_custom_metric,
     tensorleap_metadata, tensorleap_custom_loss, tensorleap_custom_visualizer
 )
-from leap_utils import Yolov5LossHolder, compute_iou, compute_accuracy
+from leap_utils import load_model, compute_iou, compute_accuracy
+from leap_config import CONFIG, abs_path_from_root
 
-yolov5_loss_holder = Yolov5LossHolder()
 
 # ------------------------------
 # Preprocessing and Encoders
@@ -36,16 +36,14 @@ def preprocess_func_leap() -> List[PreprocessResponse]:
     Returns:
         List[PreprocessResponse]: List of datasets prepared for further processing.
     """
-    data_path = Path(__file__).resolve().parent / 'data/VisDrone.yaml'
-    data = check_dataset(data_path, autodownload=False)
-    yolov5_loss_holder.create_loss(os.path.join(data["path"], "yolov5s-visdrone.pt"))
+    data_yaml_path = abs_path_from_root(CONFIG["data_yaml_path"])
+    data = check_dataset(data_yaml_path, autodownload=False)
 
-    imgsz = 1024 # Follow the train protocol
     responses = []
     for split in ['train', 'val', 'test']:
         _, dataset = create_dataloader(
                 data[split],
-                imgsz,
+                imgsz = CONFIG["image_size"],
                 batch_size=1,
                 stride=32,
                 single_cls=False,
@@ -169,28 +167,24 @@ def sample_metadata(idx: int, preprocessing: PreprocessResponse) -> dict:
 # ------------------------------
 # Custom Loss
 # ------------------------------
+def yolov5_loss_factory(num_anchors):
+    # Build predictions list
+    preds_list = ', '.join([f'pred{i}' for i in range(num_anchors)])
+    all_args = f'{preds_list}, gt, demo_pred'
 
-@tensorleap_custom_loss("yolov5_loss")
-def yolov5_loss(pred0: np.ndarray, pred1: np.ndarray, pred2: np.ndarray, gt: np.ndarray, demo_pred: np.ndarray):
-    """
-    Computes YOLOv5-style object detection loss.
-
-    Args:
-        pred0, pred1, pred2 (np.ndarray): Prediction tensors for each detection scale.
-        gt (np.ndarray): Ground truth bounding boxes.
-        demo_pred (np.ndarray): Not used in loss computation. Added due to technical Tensorleap reason
-
-    Returns:
-        np.ndarray: Loss scalar.
-    """
-    compute_loss = yolov5_loss_holder.get_loss()
-    preds = [torch.from_numpy(pred) for pred in (pred0, pred1, pred2)]
-
-    gt = torch.from_numpy(gt).squeeze(0)
-    gt = torch.cat([torch.zeros_like(gt[:,1]).unsqueeze(1), gt], dim=1) # Add "batch idx" column for the loss
-    loss = compute_loss(preds, gt)[0] # compute_loss returns a tuple, the full loss is the first item
-    loss = loss.unsqueeze(0) # Add batch dimension
-    return loss.numpy()
+    # Dynamically generate function code
+    fn_code = f'''
+    @tensorleap_custom_loss("yolov5_loss")
+    def yolov5_loss({all_args}):
+        preds = [torch.from_numpy(p) for p in [{preds_list}]]
+        gt_torch = torch.from_numpy(gt).squeeze(0)
+        gt_torch = torch.cat([torch.zeros_like(gt_torch[:, 1]).unsqueeze(1), gt_torch], dim=1)
+        loss = yolov5_loss_compute(preds, gt_torch)[0]
+        return loss.unsqueeze(0).numpy()
+    '''
+    local_ns = {}
+    exec(textwrap.dedent(fn_code), globals(), local_ns)
+    return local_ns['yolov5_loss']
 
 # ------------------------------
 # Visualizers
@@ -329,10 +323,10 @@ def get_per_sample_metrics(y_pred: np.ndarray, preprocess: SamplePreprocessRespo
 # ------------------------------
 # The model outputs a list of 4 tensors:
 # 1. Processed object detection results for visualization
-# 2. 3 raw prediction outputs used for computing loss
+# 2. N raw prediction outputs used for computing loss
 
 # Bind the object detection output for visualization/interpretation
-# - This tensor contains bounding box predictions after NMS
+# - This tensor contains bounding box predictions before NMS
 # - Shape: (Batch, Prediction scores, Num_BBoxes)
 # - Prediction scores contain the following scores:
 #   ["x", "y", "w", "h", "obj_conf"] + class names from cfg["names"]
@@ -340,13 +334,12 @@ def get_per_sample_metrics(y_pred: np.ndarray, preprocess: SamplePreprocessRespo
 leap_binder.add_prediction(
     name='object detection',
     labels=["x", "y", "w", "h", "obj_conf"] + cfg["names"],
-    channel_dim=1
+    channel_dim=-1
 )
 
-# Bind intermediate feature outputs for analysis or debugging.
-leap_binder.add_prediction(name='concatenate_128', labels=[str(i) for i in range(128)], channel_dim=2)
-leap_binder.add_prediction(name='concatenate_64', labels=[str(i) for i in range(64)], channel_dim=2)
-leap_binder.add_prediction(name='concatenate_32', labels=[str(i) for i in range(32)], channel_dim=2)
+torch_model = load_model(CONFIG["torch_model_weights_name"])
+yolov5_loss_compute = ComputeLoss(torch_model)
+yolov5_loss = yolov5_loss_factory(yolov5_loss_compute.na)
 
 if __name__ == '__main__':
     leap_binder.check()

@@ -6,6 +6,8 @@ include:
     - leap_binder.py
     - leap_utils.py
     - config.py
+    - leap_config.py
+    - leap_config.yaml
     - requirements.txt
     - leap_mapping.yaml
     - data/VisDrone.yaml

@@ -1,9 +1,10 @@
+import os
 import torch
 import numpy as np
 from pathlib import Path
-from utils.loss import ComputeLoss
 from models.experimental import attempt_load
 from ultralytics.utils.metrics import box_iou
+from leap_config import CONFIG, DATA_CONFIG, abs_path_from_root
 
 def add_noop_permute_to_outputs(onnx_path_in, onnx_path_out=None):
     import onnx
@@ -57,9 +58,9 @@ def add_noop_permute_to_outputs(onnx_path_in, onnx_path_out=None):
     onnx.save(model, onnx_path_out)
     print(f"Saved model with no-op permute outputs to: {onnx_path_out}")
 
-def export_onnx(pytorch_weights_path=Path(__file__).resolve().parent / "weights/yolov5s-visdrone.pt", onnx_path=None):
+def export_onnx(pytorch_weights_path=abs_path_from_root("weights/yolov5s-visdrone.pt"), onnx_path=None):
     model = attempt_load(pytorch_weights_path, device='cpu')
-    input = torch.rand(1,3,1024,1024)
+    input = torch.rand(1,3,CONFIG["image_size"],CONFIG["image_size"])
     if not onnx_path:
         pytorch_weights_path = Path(pytorch_weights_path)
         onnx_path = pytorch_weights_path.with_suffix(".onnx")
@@ -80,22 +81,14 @@ def export_onnx(pytorch_weights_path=Path(__file__).resolve().parent / "weights/
     except Exception as e:
         print(f"An error occurred: {e}")
 
-class Yolov5LossHolder:
-    def __init__(self):
-        self.compute_loss = None
-
-    def create_loss(self, torch_weights_path, use_mounted_dir=True):
-        if not use_mounted_dir or torch_weights_path is None:
-            torch_weights_path = Path(__file__).resolve().parent / "weights/yolov5s-visdrone.pt"
-        model = torch.load(torch_weights_path, map_location='cpu')["model"]
-        self.compute_loss = ComputeLoss(model)  # create loss calculator
-
-    def get_loss(self):
-        if self.compute_loss is None:
-            raise RuntimeError("Trying to get non-initialized loss")
-        else:
-            return self.compute_loss
-
+def load_model(model_name, use_mounted_dir=True):
+    if use_mounted_dir:
+        torch_weights_path = os.path.join(DATA_CONFIG["path"], model_name)
+    else:
+        # If not using mounted dir, assume model is in folder "weights"
+        torch_weights_path = abs_path_from_root(os.path.join("weights", model_name))
+    model = attempt_load(torch_weights_path, device='cpu')
+    return model
 
 def compute_iou(gt_bbox, preds_bbox):
     iou_mat = box_iou(gt_bbox, preds_bbox)
