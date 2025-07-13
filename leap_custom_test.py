@@ -18,13 +18,16 @@ def check_custom_test():
     print("started custom tests")
 
     # load the model
-    model_path = r"/home/aime/tensorleap/new_best.onnx"
+    # model_path = r"/home/aime/tensorleap/new_best.onnx"
+    model_path = r"/Users/amitcohen/projects/yolov5/weights/yolov5s-visdrone.onnx"
     session = ort.InferenceSession(model_path)
 
     # Get model input name(s)
     input_name = session.get_inputs()[0].name
 
     responses = preprocess_func_leap()
+    import time
+    curr = time.time()
     for subset in responses:
         for idx in range(2):
             image = input_encoder(idx, subset)
@@ -45,9 +48,11 @@ def check_custom_test():
             main_pred = preds[0]
             d_loss=yolov5_loss(*anchor_preds, gt_input, main_pred)
             metadata = sample_metadata(idx, subset)
-            metrics = get_per_sample_metrics(main_pred, SamplePreprocessResponse(np.array(idx), subset))
-            confusion_matrix = confusion_matrix_metric(main_pred, SamplePreprocessResponse(np.array(idx), subset))
+            metrics = get_per_sample_metrics(main_pred, gt_input)
+            confusion_matrix = confusion_matrix_metric(main_pred, gt_input)
+    end = time.time()
     print("finish tests")
+    print(f"tests took {end - curr} seconds")
 
 if __name__ == '__main__':
     check_custom_test()
