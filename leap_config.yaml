@@ -1,3 +1,4 @@
 image_size: 1024
 data_yaml_path: "data/VisDrone.yaml"
 torch_model_weights_name: "best.pt"
+max_num_of_objects: 500

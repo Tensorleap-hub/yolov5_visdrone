@@ -8,27 +8,28 @@
 
 
 # Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
-path: /media/aime/Trainingdata3/v2 # dataset root dir
-train:
-    - train/images/drone2021
-#    - train/images/mva2023_sod4bird_train
-#    - train/images/v1 # train images (relative to 'path')  6471 images
-val:
-    - val/images/drone2021
-#    - val/images/mva2023_sod4bird_train
-#    - val/images/v1 # val images (relative to 'path')  548 images
-test: test/images/cuav_test # test images (optional)  1610 images
-#train: train/images
-#val: val/images
-#test: test/images
+#path: /media/aime/Trainingdata3/v2 # dataset root dir
+#train:
+#    - train/images/drone2021
+##    - train/images/mva2023_sod4bird_train
+##    - train/images/v1 # train images (relative to 'path')  6471 images
+#val:
+#    - val/images/drone2021
+##    - val/images/mva2023_sod4bird_train
+##    - val/images/v1 # val images (relative to 'path')  548 images
+#test: test/images/cuav_test # test images (optional)  1610 images
+train: VisDrone2019-DET-train/images
+val: VisDrone2019-DET-val/images
+test: VisDrone2019-DET-test-dev/images
 
 # Classes
-nc: 2  # number of classes
-#names: ['pedestrian', 'people', 'bicycle', 'car', 'van', 'truck', 'tricycle', 'awning-tricycle', 'bus', 'motor']
+nc: 10  # number of classes
+path: /Users/amitcohen/tensorleap/data/VisDrone # dataset root dir
+pred_names: ['pedestrian', 'people', 'bicycle', 'car', 'van', 'truck', 'tricycle', 'awning-tricycle', 'bus', 'motor']
 
 # Changed by KTH to have correct mapping of labels
 #pred_names: ['people', 'vehicle']
-pred_names: ['drone', 'bird']
+#pred_names: ['drone', 'bird']
 
 
 # Download script/URL (optional) ---------------------------------------------------------------------------------------
