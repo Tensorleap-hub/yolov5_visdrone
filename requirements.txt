@@ -17,3 +17,4 @@ tensorflow==2.15.0
 opencv-python==4.11.0.86
 typing-extensions==4.6.0
 code-loader
+onnxruntime==1.18.1

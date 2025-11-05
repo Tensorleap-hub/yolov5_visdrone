@@ -1,15 +1,15 @@
 codeIntegrationId: ""
 projectId: ""
 secretId: ""
-entryFile: leap_binder.py
+entryFile: leap_integration.py
 include:
     - leap_binder.py
     - leap_utils.py
     - config.py
     - leap_config.py
     - leap_config.yaml
+    - leap_integration.py
     - requirements.txt
-    - leap_mapping.yaml
     - data/VisDrone.yaml
     - models/*.py
     - utils/*.py

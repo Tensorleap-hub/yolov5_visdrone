@@ -26,18 +26,18 @@ def check_custom_test():
         for idx in range(2):
             image = input_encoder(idx, subset)
 
-            preds = session.run(None, {input_name: np.expand_dims(image, axis=0)})
+            preds = session.run(None, {input_name: image})
             gt = gt_encoder(idx, subset)
 
-            img = image_visualizer(np.expand_dims(image, 0))
-            image_with_bbox = bb_decoder(np.expand_dims(image, 0), preds[0])
-            image_with_gt_bbox = gt_bb_decoder(np.expand_dims(image, 0),np.expand_dims(gt, 0))
+            img = image_visualizer(image)
+            image_with_bbox = bb_decoder(image, preds[0])
+            image_with_gt_bbox = gt_bb_decoder(image,gt)
 
             visualize(img)
             visualize(image_with_bbox)
             visualize(image_with_gt_bbox)
 
-            d_loss=yolov5_loss(preds[1], preds[2], preds[3], np.expand_dims(gt, 0), preds[0])
+            d_loss=yolov5_loss(preds[1], preds[2], preds[3], gt, preds[0])
             metadata = sample_metadata(idx, subset)
             metrics = get_per_sample_metrics(preds[0], SamplePreprocessResponse(np.array(idx), subset))
     print("finish tests")
