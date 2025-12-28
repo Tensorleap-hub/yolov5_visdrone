@@ -37,7 +37,7 @@ def preprocess_func_leap() -> List[PreprocessResponse]:
         List[PreprocessResponse]: List of datasets prepared for further processing.
     """
     data_yaml_path = abs_path_from_root(CONFIG["data_yaml_path"])
-    data = check_dataset(data_yaml_path, autodownload=False)
+    data = check_dataset(data_yaml_path, autodownload=True)
 
     responses = []
     for split in ['train', 'val', 'test']:
