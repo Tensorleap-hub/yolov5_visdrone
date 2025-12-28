@@ -13,8 +13,8 @@ thop
 pandas
 seaborn
 ultralytics==8.1.47
-tensorflow==2.15.0
+tensorflow==2.13.1
 opencv-python==4.11.0.86
-typing-extensions==4.6.0
+typing-extensions==4.5.0
 code-loader
 onnxruntime==1.18.1
