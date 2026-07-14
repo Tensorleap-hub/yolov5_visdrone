@@ -81,7 +81,7 @@ def export_onnx(pytorch_weights_path=abs_path_from_root("weights/yolov5s-visdron
     except Exception as e:
         print(f"An error occurred: {e}")
 
-def load_model(model_name, use_mounted_dir=True):
+def load_model(model_name, use_mounted_dir=False):
     if use_mounted_dir:
         torch_weights_path = os.path.join(DATA_CONFIG["path"], model_name)
     else:

@@ -15,4 +15,5 @@ include:
     - utils/*.py
     - utils/**/*.py
     - utils/***/**/*.py
+    - weights/yolov5s-visdrone.pt
 pythonVersion: py39
