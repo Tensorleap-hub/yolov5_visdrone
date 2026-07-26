@@ -54,11 +54,11 @@ def integration_test(idx, subset):
 
     pred_main = preds[0]
 
-    loss = yolov5_loss(preds[1], preds[2], preds[3], gt, pred_main)
+    gt_input = np.expand_dims(gt, 0)  # add batch dim
+    loss = yolov5_loss(preds[1], preds[2], preds[3], gt_input, pred_main)
 
     # Calculate metrics
-    sample_preprocess_response = SamplePreprocessResponse(np.array(idx), subset)
-    metrics = get_per_sample_metrics(pred_main, sample_preprocess_response)
+    metrics = get_per_sample_metrics(pred_main, gt_input)
 
     # Visualizations
     img_vis = image_visualizer(x)
