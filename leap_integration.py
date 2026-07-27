@@ -54,11 +54,13 @@ def integration_test(idx, subset):
 
     pred_main = preds[0]
 
-    gt_input = np.expand_dims(gt, 0)  # add batch dim
-    loss = yolov5_loss(preds[1], preds[2], preds[3], gt_input, pred_main)
+    # gt and preds are traced nodes; the framework adds the batch dim when routing
+    # them to custom functions, so pass them directly (no np.expand_dims, which
+    # would strip the node_mapping used for graph tracing).
+    loss = yolov5_loss(preds[1], preds[2], preds[3], gt, pred_main)
 
     # Calculate metrics
-    metrics = get_per_sample_metrics(pred_main, gt_input)
+    metrics = get_per_sample_metrics(pred_main, gt)
 
     # Visualizations
     img_vis = image_visualizer(x)

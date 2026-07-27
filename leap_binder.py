@@ -350,16 +350,19 @@ def get_per_sample_metrics(y_preds: np.ndarray, targets: np.ndarray):
         gt = torch.from_numpy(gt)
 
 
+        # NOTE: metric values must stay concrete floats — nan round-trips to None in
+        # storage, making the attribute column object-dtype and breaking the platform's
+        # np.isnan in the semantic-projection step. Use 0.0/1.0 like master, never nan.
         if gt.shape[0] == 0 and pred.shape[0] == 0:
-            _update_metrics(metrics,np.nan, np.nan, 0, 0, 0, 0, 1, 1) # Edge case: no objects, assume perfect
+            _update_metrics(metrics, 1.0, 1.0, 1.0, 0, 0, 0, 1, 1) # Edge case: no objects, nothing to detect -> perfect
             continue
 
         if pred.shape[0] == 0:
-            _update_metrics(metrics, np.nan, 0, 0, 0, 0, gt.shape[0], 0, 0)  # No predictions at all
+            _update_metrics(metrics, 0.0, 0, 0, 0, 0, gt.shape[0], 0, 0)  # No predictions at all
             continue
 
         if gt.shape[0] == 0:
-            _update_metrics(metrics, 0, np.nan, 0, pred.shape[0], 0, 0, 0, 0) # No GT but has predictions
+            _update_metrics(metrics, 0, 0.0, 0, pred.shape[0], 0, 0, 0, 0) # No GT but has predictions
             continue
 
         pred_boxes = pred[:, :4] / CONFIG["image_size"] # normalize to be [0,1]
