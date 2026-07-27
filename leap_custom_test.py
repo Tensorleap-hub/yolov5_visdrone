@@ -1,6 +1,6 @@
 from leap_binder import (
     input_encoder, preprocess_func_leap, gt_encoder, sample_metadata, leap_binder, yolov5_loss,
-    gt_bb_decoder, image_visualizer, bb_decoder, get_per_sample_metrics
+    gt_bb_decoder, image_visualizer, bb_decoder, get_per_sample_metrics, confusion_matrix_metric
 )
 import numpy as np
 from code_loader.helpers.visualizer.visualize import visualize
@@ -37,9 +37,13 @@ def check_custom_test():
             visualize(image_with_bbox)
             visualize(image_with_gt_bbox)
 
-            d_loss=yolov5_loss(preds[1], preds[2], preds[3], gt, preds[0])
+            anchor_preds = preds[1:]  # predictions from anchors
+            gt_input = np.expand_dims(gt, 0)  # ground truth, add batch dim
+            main_pred = preds[0]
+            d_loss=yolov5_loss(*anchor_preds, gt_input, main_pred)
             metadata = sample_metadata(idx, subset)
-            metrics = get_per_sample_metrics(preds[0], SamplePreprocessResponse(np.array(idx), subset))
+            metrics = get_per_sample_metrics(main_pred, gt_input)
+            confusion_matrix = confusion_matrix_metric(main_pred, gt_input)
     print("finish tests")
 
 if __name__ == '__main__':

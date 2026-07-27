@@ -67,13 +67,10 @@ def export_onnx(pytorch_weights_path=abs_path_from_root("weights/yolov5s-visdron
     try:
         torch.onnx.export(model,input,onnx_path,
                     input_names=['images'],
-                    output_names=['output1', 'output2', 'output3', 'output4'],
+                    output_names=['output'],
                     dynamic_axes={
                                 'images': {0: 'batch', 2: 'height', 3: 'width'},
-                                'output1': {0: 'batch', 1: 'anchors'},
-                                'output2': {0: 'batch'},
-                                'output3': {0: 'batch'},
-                                'output4': {0: 'batch'}
+                                'output': {0: 'batch', 1: 'anchors'}
                     }
         )
         add_noop_permute_to_outputs(onnx_path)
@@ -107,7 +104,7 @@ def compute_accuracy(gt_bbox, gt_labels, preds_bbox, preds_labels):
     succ = (preds_labels[filtered_iou.max(dim=1)[1].numpy()] == gt_labels).numpy()
     return succ.mean()
 
-def compute_precision_recall_f1(gt_boxes, pred_boxes, iou_threshold=0.5):
+def compute_precision_recall_f1_fp_tp_fn(gt_boxes, pred_boxes, iou_threshold=0.5):
     iou_mat = box_iou(gt_boxes, pred_boxes)  # Shape: (num_gt, num_pred)
 
     matched_gt = set()
@@ -131,4 +128,4 @@ def compute_precision_recall_f1(gt_boxes, pred_boxes, iou_threshold=0.5):
     recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
 
-    return precision, recall, f1
+    return precision, recall, f1, FP, TP, FN

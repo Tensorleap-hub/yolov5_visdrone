@@ -6,22 +6,23 @@ from config import cfg
 from typing import List
 
 from utils.loss import ComputeLoss
+from utils.metrics import box_iou
 from code_loader import leap_binder
 from utils.dataloaders import create_dataloader
 from utils.general import check_dataset, colorstr
-from leap_utils import compute_precision_recall_f1
+from leap_utils import compute_precision_recall_f1_fp_tp_fn
 from code_loader.contract.responsedataclasses import BoundingBox
 from code_loader.visualizers.default_visualizers import LeapImage
 from utils.general import non_max_suppression, xyxy2xywh, xywh2xyxy
-from code_loader.contract.enums import LeapDataType, MetricDirection
+from code_loader.contract.enums import LeapDataType, MetricDirection, ConfusionMatrixValue
 from code_loader.contract.visualizer_classes import LeapImageWithBBox
-from code_loader.contract.datasetclasses import PreprocessResponse, SamplePreprocessResponse
+from code_loader.contract.datasetclasses import PreprocessResponse, SamplePreprocessResponse, ConfusionMatrixElement
 from code_loader.inner_leap_binder.leapbinder_decorators import (
     tensorleap_preprocess, tensorleap_gt_encoder, tensorleap_input_encoder, tensorleap_custom_metric,
     tensorleap_metadata, tensorleap_custom_loss, tensorleap_custom_visualizer
 )
 from leap_utils import load_model, compute_iou, compute_accuracy
-from leap_config import CONFIG, abs_path_from_root
+from leap_config import CONFIG, DATA_CONFIG, abs_path_from_root
 
 
 # ------------------------------
@@ -102,19 +103,34 @@ def gt_encoder(idx: int, preprocessing: PreprocessResponse) -> np.ndarray:
             # Get the original width and height of the image at index i
             original_w, original_h = preprocessing.data.shapes[i]
             # Calculate the new image height after resizing the width to img_size
-            new_h = original_h * img_size / original_w
-            # Compute the padding size required to make the final image square (only vertical padding is considered)
-            pad_size = img_size - new_h
-
-            assert original_w >= original_h, "Only horizontal images are currently supported when dataloader's rect is False, since padding is assumed to be vertical only"
-
-            # Adjust the vertical coordinate y to account for resizing and vertical padding
-            y = y * new_h + pad_size / 2 # scale y to new height and add half of the total vertical padding
-            y = y / img_size             # normalize y to the range [0, 1]
-            # Scale the height h based on the resized image height and normalize it
-            h = h * new_h / img_size
+            if original_w > original_h:
+                new_h = original_h * img_size / original_w
+                # Compute the padding size required to make the final image square (only vertical padding is considered)
+                pad_size = img_size - new_h
+                # Adjust the vertical coordinate y to account for resizing and vertical padding
+                y = y * new_h + pad_size / 2 # scale y to new height and add half of the total vertical padding
+                y = y / img_size             # normalize y to the range [0, 1]
+                # Scale the height h based on the resized image height and normalize it
+                h = h * new_h / img_size
+            else:
+                new_w = original_w * img_size / original_h
+                pad_size = img_size - new_w
+                # Adjust the horizontal coordinate x to account for resizing and horizontal padding
+                x = x * new_w + pad_size / 2 # scale x to new height and add half of the total horizontal padding
+                x = x / img_size # normalize x to the range [0, 1]
+                # Scale the width w based on the resized image height and normalize it
+                w = w * new_w / img_size
 
         adjusted = np.concatenate([cls, x, y, w, h], axis=1)
+
+        max_num_of_objs = CONFIG["max_num_of_objects"]
+        if adjusted.shape[0] < max_num_of_objs:
+            pad_rows = max_num_of_objs - adjusted.shape[0]
+            pad = np.full((pad_rows, adjusted.shape[1]), -1)  # Create padding rows filled with -1
+            adjusted = np.vstack([adjusted, pad])
+        elif labels.shape[0] > max_num_of_objs:
+            adjusted = adjusted[:max_num_of_objs, :]
+
         labels_arr.append(adjusted)
 
     return np.array(labels_arr,dtype=np.float32).squeeze(0)
@@ -177,10 +193,14 @@ def yolov5_loss_factory(num_anchors):
     @tensorleap_custom_loss("yolov5_loss")
     def yolov5_loss({all_args}):
         preds = [torch.from_numpy(p) for p in [{preds_list}]]
-        gt_torch = torch.from_numpy(gt).squeeze(0)
+        gt = gt.squeeze(0)
+        mask = ~(gt == -1).any(axis=1)
+        # Filter out padding rows
+        gt = gt[mask]
+        gt_torch = torch.from_numpy(gt)
         gt_torch = torch.cat([torch.zeros_like(gt_torch[:, 1]).unsqueeze(1), gt_torch], dim=1)
         loss = yolov5_loss_compute(preds, gt_torch)[0]
-        return loss.numpy()
+        return loss.unsqueeze(0).numpy()
     '''
     local_ns = {}
     exec(textwrap.dedent(fn_code), globals(), local_ns)
@@ -221,6 +241,12 @@ def gt_bb_decoder(image: np.ndarray, bb_gt: np.ndarray) -> LeapImageWithBBox:
     image = image.squeeze(0)
     image = image.transpose(1, 2, 0)  # LeapImageWithBBox visualizer expects inputs as channel last.
     image = (image*255).astype(np.uint8)
+
+    bb_gt = bb_gt.squeeze(0)
+    mask = ~(bb_gt == -1).any(axis=1)
+    # Filter out padding rows
+    bb_gt = bb_gt[mask]
+
     bboxes = [
         BoundingBox(
             x=bbx[1],
@@ -230,7 +256,7 @@ def gt_bb_decoder(image: np.ndarray, bb_gt: np.ndarray) -> LeapImageWithBBox:
             confidence=1.,
             label=cfg["names"][int(bbx[0])] if not np.isnan(bbx[0]) else 'Unknown Class'
         )
-        for bbx in bb_gt.squeeze(0)
+        for bbx in bb_gt
     ]
     return LeapImageWithBBox(data=image, bounding_boxes=bboxes)
 
@@ -272,51 +298,145 @@ def bb_decoder(image: np.ndarray, predictions: np.ndarray) -> LeapImageWithBBox:
 # Custom Metrics
 # ------------------------------
 
-@tensorleap_custom_metric(name="per_sample_metrics", direction=MetricDirection.Upward)
-def get_per_sample_metrics(y_pred: np.ndarray, preprocess: SamplePreprocessResponse):
+@tensorleap_custom_metric(name="per_sample_metrics", direction={
+            "precision": MetricDirection.Upward,
+            "recall": MetricDirection.Upward,
+            "f1": MetricDirection.Upward,
+            "FP": MetricDirection.Downward,
+            "TP": MetricDirection.Upward,
+            "FN": MetricDirection.Downward,
+            "iou": MetricDirection.Upward,
+            "accuracy": MetricDirection.Upward,
+        })
+def get_per_sample_metrics(y_preds: np.ndarray, targets: np.ndarray):
     """
     Calculates metrics per sample on the model's prediction
 
     Args:
         y_pred (np.ndarray): Prediction from model.
-        preprocessing (PreprocessResponse): Dataset wrapper.
+        targets (np.ndarray): Ground truth.
 
     Returns:
         dict: Dictionary with metric values.
     """
-    def _make_metrics(precision, recall, f1, iou, accuracy):
-        return {
-            "precision": np.array([precision], dtype=np.float32),
-            "recall": np.array([recall], dtype=np.float32),
-            "f1": np.array([f1], dtype=np.float32),
-            "iou": np.array([iou], dtype=np.float32),
-            "accuracy": np.array([accuracy], dtype=np.float32),
+
+    def _update_metrics(metrics, precision, recall, f1, fp, tp, fn, iou, accuracy):
+
+        metrics["precision"] = np.concatenate([metrics["precision"], np.array([precision], dtype=np.float32)])
+        metrics["recall"] = np.concatenate([metrics["recall"], np.array([recall], dtype=np.float32)])
+        metrics["f1"] = np.concatenate([metrics["f1"], np.array([f1], dtype=np.float32)])
+        metrics["FP"] = np.concatenate([metrics["FP"], np.array([fp], dtype=np.int32)])
+        metrics["TP"] = np.concatenate([metrics["TP"], np.array([tp], dtype=np.int32)])
+        metrics["FN"] = np.concatenate([metrics["FN"], np.array([fn], dtype=np.int32)])
+        metrics["iou"] = np.concatenate([metrics["iou"], np.array([iou], dtype=np.float32)])
+        metrics["accuracy"] = np.concatenate([metrics["accuracy"], np.array([accuracy], dtype=np.float32)])
+
+    metrics = {
+            "precision": np.array([], dtype=np.float32),
+            "recall": np.array([], dtype=np.float32),
+            "f1": np.array([], dtype=np.float32),
+            "FP": np.array([], dtype=np.int32),
+            "TP": np.array([], dtype=np.int32),
+            "FN": np.array([], dtype=np.int32),
+            "iou": np.array([], dtype=np.float32),
+            "accuracy": np.array([], dtype=np.float32),
         }
+    preds = non_max_suppression(torch.from_numpy(y_preds))
+    for pred, gt in zip(preds, targets):
 
-    dataloader = preprocess.preprocess_response.data
-    gt = dataloader[int(preprocess.sample_ids)][1] # shape: [N, 6] (_,label,x,y,w,h)
-    preds = non_max_suppression(torch.from_numpy(y_pred))[0]
+        mask = ~(gt == -1).any(axis=1)
+        # Filter out padding rows
+        gt = gt[mask]
+        gt = torch.from_numpy(gt)
 
-    if gt.shape[0] == 0 and preds.shape[0] == 0:
-        return _make_metrics(1, 0, 0, 1, 1) # Edge case: no objects, assume perfect
 
-    if preds.shape[0] == 0:
-        return _make_metrics(0, 0, 0, 0, 0)  # No predictions at all
+        # NOTE: metric values must stay concrete floats — nan round-trips to None in
+        # storage, making the attribute column object-dtype and breaking the platform's
+        # np.isnan in the semantic-projection step. Use 0.0/1.0 like master, never nan.
+        if gt.shape[0] == 0 and pred.shape[0] == 0:
+            _update_metrics(metrics, 1.0, 1.0, 1.0, 0, 0, 0, 1, 1) # Edge case: no objects, nothing to detect -> perfect
+            continue
 
-    if gt.shape[0] == 0:
-        return _make_metrics(0, 0, 0, 0, 0) # No GT but has predictions
+        if pred.shape[0] == 0:
+            _update_metrics(metrics, 0.0, 0, 0, 0, 0, gt.shape[0], 0, 0)  # No predictions at all
+            continue
 
-    preds_boxes = preds[:, :4] / dataloader.img_size # normalize to be [0,1]
-    preds_labels = preds[:, 5]
+        if gt.shape[0] == 0:
+            _update_metrics(metrics, 0, 0.0, 0, pred.shape[0], 0, 0, 0, 0) # No GT but has predictions
+            continue
 
-    gt_boxes = xywh2xyxy(gt[:, 2:])
-    gt_labels = gt[:, 1]
+        pred_boxes = pred[:, :4] / CONFIG["image_size"] # normalize to be [0,1]
+        pred_labels = pred[:, 5]
 
-    p, r, f1 = compute_precision_recall_f1(gt_boxes, preds_boxes, iou_threshold=0.5)
-    iou = compute_iou(gt_boxes, preds_boxes)
-    acc = compute_accuracy(gt_boxes, gt_labels, preds_boxes, preds_labels)
+        gt_boxes = xywh2xyxy(gt[:, 1:])
+        gt_labels = gt[:, 0]
 
-    return _make_metrics(float(p), float(r), float(f1), float(iou), float(acc))
+        p, r, f1, FP, TP, FN = compute_precision_recall_f1_fp_tp_fn(gt_boxes, pred_boxes, iou_threshold=0.5)
+        iou = compute_iou(gt_boxes, pred_boxes)
+        acc = compute_accuracy(gt_boxes, gt_labels, pred_boxes, pred_labels)
+        _update_metrics(metrics, float(p), float(r), float(f1), int(FP), int(TP), int(FN), float(iou), float(acc))
+    return metrics
+
+@tensorleap_custom_metric('Confusion Matrix')
+def confusion_matrix_metric(y_preds: np.ndarray, targets: np.ndarray):
+    threshold=0.5
+    confusion_matrices = []
+    preds = non_max_suppression(torch.from_numpy(y_preds))
+    for pred, gt in zip(preds, targets):
+        confusion_matrix_elements = []
+
+        mask = ~(gt == -1).any(axis=1)
+        # Filter out padding rows
+        gt = gt[mask]
+        gt = torch.from_numpy(gt)
+        gt_bbox = xywh2xyxy(gt[:, 1:])
+        gt_labels = gt[:, 0]
+
+        pred_boxes = pred[:, :4] / CONFIG["image_size"]  # normalize to be [0,1]
+
+        if pred.shape[0] != 0 and gt_bbox.shape[0] != 0:
+            ious = box_iou(gt_bbox, pred_boxes).numpy().T
+            prediction_detected = np.any((ious > threshold), axis=1)
+            max_iou_ind = np.argmax(ious, axis=1)
+            for i, prediction in enumerate(prediction_detected):
+                gt_idx = int(gt_labels[max_iou_ind[i]])
+                class_name = DATA_CONFIG["names"][gt_idx]
+                gt_label = f"{class_name}"
+                confidence = pred[i, 4]
+                if prediction:  # TP
+                    confusion_matrix_elements.append(ConfusionMatrixElement(
+                        str(gt_label),
+                        ConfusionMatrixValue.Positive,
+                        float(confidence)
+                    ))
+                else:  # FP
+                    class_name = DATA_CONFIG["names"][int(pred[i,5])]
+                    pred_label = f"{class_name}"
+                    confusion_matrix_elements.append(ConfusionMatrixElement(
+                        str(pred_label),
+                        ConfusionMatrixValue.Negative,
+                        float(confidence)
+                    ))
+        else:  # No prediction
+            ious = np.zeros((1, gt_labels.shape[0]))
+        gts_detected = np.any((ious > threshold), axis=0)
+        for k, gt_detection in enumerate(gts_detected):
+            label_idx = gt_labels[k]
+            if not gt_detection : # FN
+                class_name = DATA_CONFIG["names"][int(label_idx)]
+                confusion_matrix_elements.append(ConfusionMatrixElement(
+                    f"{class_name}",
+                    ConfusionMatrixValue.Positive,
+                    float(0)
+                ))
+        if all(~ gts_detected):
+            confusion_matrix_elements.append(ConfusionMatrixElement(
+                "background",
+                ConfusionMatrixValue.Positive,
+                float(0)
+            ))
+        confusion_matrices.append(confusion_matrix_elements)
+    return confusion_matrices
 
 # ------------------------------
 # Prediction Binding
