@@ -200,7 +200,7 @@ def yolov5_loss_factory(num_anchors):
         gt_torch = torch.from_numpy(gt)
         gt_torch = torch.cat([torch.zeros_like(gt_torch[:, 1]).unsqueeze(1), gt_torch], dim=1)
         loss = yolov5_loss_compute(preds, gt_torch)[0]
-        return loss.unsqueeze(0).numpy()
+        return loss.numpy()
     '''
     local_ns = {}
     exec(textwrap.dedent(fn_code), globals(), local_ns)

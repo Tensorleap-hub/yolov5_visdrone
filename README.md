@@ -22,7 +22,7 @@ poetry install
 ```
 To run Python scripts using the virtual environment:
 ```
-poetry run python leap_custom_test.py
+poetry run python leap_integration.py
 ```
 ### 📂 Dataset Configuration
 This integration uses the [VisDrone dataset](https://github.com/VisDrone/VisDrone-Dataset). Dataset structure should follow this pattern:
@@ -54,7 +54,7 @@ To use a custom .yaml file, update the data_path inside the preprocess_func_leap
 ## ✅ Local Validation (Highly Recommended)
 Before pushing to Tensorleap, run a local test to verify that data loading and visualization work correctly:
 ```
-poetry run python leap_custom_test.py
+poetry run python leap_integration.py
 ```
 This checks:
 * 	Data integration logic
@@ -130,11 +130,11 @@ Registered via ```leap_binder.add_prediction()```:
 ---
 ## 🛠 Tips & Troubleshooting
 #### Common errors:
-##### ```leap_custom_test.py``` failures:
+##### ```leap_integration.py``` failures:
 * Shape mismatch - debug and verify tensors shapes
 * Bounding boxes are misaligned in visualizations - make sure you follow the correct bbox convention.
 #### Validate Assets failures:
-* ```leap_custom_test.py``` passes and Validate Assets fails - check the mapping in the Network tab. 
+* ```leap_integration.py``` passes and Validate Assets fails - check the mapping in the Network tab. 
 #### Usage tips:
 * If your code integration is working and you only need to update the code (without changing the model), use ```leap code push``` instead of ```leap project push``` to avoid re-uploading an already functioning model.
 * If not sure what code integration is currently in Tensorleap's platform - go to code integration tab in the network tab and see the last update time (and the code itself) 

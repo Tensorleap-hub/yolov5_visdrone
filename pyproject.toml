@@ -4,11 +4,11 @@ version = "7.0.0"
 description = "Ultralytics YOLOv5 for SOTA object detection, instance segmentation and image classification."
 authors = ["Glenn Jocher", "Ayush Chaurasia", "Jing Qiu"]
 readme = "README.md"
+package-mode = false
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.11"
-code-loader = "1.0.86"
-code-loader-helpers = "1.0.21"
+code-loader = "1.0.201"
 matplotlib = ">=3.3.0"
 numpy = ">=1.22.2"
 opencv-python = ">=4.6.0"
@@ -27,6 +27,7 @@ seaborn = ">=0.11.0"
 ultralytics = "8.1.47"
 onnx = "1.17.0"
 onnxruntime = "1.19.2"
+setuptools = "<81"
 
 
 [build-system]
