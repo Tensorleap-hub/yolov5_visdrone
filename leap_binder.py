@@ -192,12 +192,12 @@ def yolov5_loss_factory(num_anchors):
     fn_code = f'''
     @tensorleap_custom_loss("yolov5_loss")
     def yolov5_loss({all_args}):
-        preds = [torch.from_numpy(p) for p in [{preds_list}]]
+        preds = [torch.from_numpy(p.astype(np.float32)) for p in [{preds_list}]]
         gt = gt.squeeze(0)
         mask = ~(gt == -1).any(axis=1)
         # Filter out padding rows
         gt = gt[mask]
-        gt_torch = torch.from_numpy(gt)
+        gt_torch = torch.from_numpy(gt.astype(np.float32))
         gt_torch = torch.cat([torch.zeros_like(gt_torch[:, 1]).unsqueeze(1), gt_torch], dim=1)
         loss = yolov5_loss_compute(preds, gt_torch)[0]
         return loss.numpy()
@@ -273,7 +273,7 @@ def bb_decoder(image: np.ndarray, predictions: np.ndarray) -> LeapImageWithBBox:
         LeapImageWithBBox: Image with predicted bounding boxes.
     """
     # Convert raw predictions into xyxy bboxes
-    preds = non_max_suppression(torch.from_numpy(predictions))[0].numpy()
+    preds = non_max_suppression(torch.from_numpy(predictions.astype(np.float32)))[0].numpy()
     preds = xyxy2xywh(preds)
 
     image = image.squeeze(0)
@@ -341,13 +341,14 @@ def get_per_sample_metrics(y_preds: np.ndarray, targets: np.ndarray):
             "iou": np.array([], dtype=np.float32),
             "accuracy": np.array([], dtype=np.float32),
         }
-    preds = non_max_suppression(torch.from_numpy(y_preds))
+    # ponytail: engine ships predictions as float16 (redis fp16 downcast); torch CPU has no Half prod/iou. Drop cast once engine restores dtype.
+    preds = non_max_suppression(torch.from_numpy(y_preds.astype(np.float32)))
     for pred, gt in zip(preds, targets):
 
         mask = ~(gt == -1).any(axis=1)
         # Filter out padding rows
         gt = gt[mask]
-        gt = torch.from_numpy(gt)
+        gt = torch.from_numpy(gt.astype(np.float32))
 
 
         # NOTE: metric values must stay concrete floats — nan round-trips to None in
@@ -381,14 +382,14 @@ def get_per_sample_metrics(y_preds: np.ndarray, targets: np.ndarray):
 def confusion_matrix_metric(y_preds: np.ndarray, targets: np.ndarray):
     threshold=0.5
     confusion_matrices = []
-    preds = non_max_suppression(torch.from_numpy(y_preds))
+    preds = non_max_suppression(torch.from_numpy(y_preds.astype(np.float32)))
     for pred, gt in zip(preds, targets):
         confusion_matrix_elements = []
 
         mask = ~(gt == -1).any(axis=1)
         # Filter out padding rows
         gt = gt[mask]
-        gt = torch.from_numpy(gt)
+        gt = torch.from_numpy(gt.astype(np.float32))
         gt_bbox = xywh2xyxy(gt[:, 1:])
         gt_labels = gt[:, 0]
 
